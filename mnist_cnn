@@ -1,0 +1,219 @@
+
+# all tensorflow api is accessible through this
+import tensorflow as tf
+# to visualize the resutls
+import matplotlib.pyplot as plt
+import numpy as np
+# 70k mnist dataset that comes with the tensorflow container
+from tensorflow.examples.tutorials.mnist import input_data
+
+tf.set_random_seed(0)
+
+# load data, 60K trainset and 10K testset
+mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+
+
+# 1. Define Variables and Placeholders
+# Model is Y = softmax(X*W + b)
+
+# input f 28 X 28 images with 1 channel (grayscale images) . None is left for minibatch size
+X = tf.placeholder(tf.float32,[None,784])
+X_image = tf.reshape(X,[-1,28,28,1])
+
+# Y_ true labels. One-Hot Encoding
+Y_= tf.placeholder(tf.float32,[None,10])
+
+def create_fully_connected_weight(shape):
+    return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
+
+def create_conv_weight(patch_height,patch_width,input_channel,output_channel):
+  initial = tf.truncated_normal(shape=[patch_height,patch_width,input_channel,output_channel], stddev=0.1)
+  return tf.Variable(initial)
+
+def create_bias(shape):
+  initial = tf.constant(0.1, shape=shape)
+  return tf.Variable(initial)
+
+def create_strides(batch_step, height_step, width_step, channel_step):
+    return [batch_step, height_step, width_step, channel_step]
+
+def create_conv_layer(input, W,strides,padding='SAME'):
+  return tf.nn.conv2d(input, W, strides, padding)
+
+def apply_max_pool_2x2(x):
+  return tf.nn.max_pool(x, kernel_size=[1, 2, 2, 1],strides=[1, 2, 2, 1], padding='SAME')
+
+# #Parameters
+#create first conv layer, with 1 input channel of orig. image, 4 output channels, stride of 1*1 and padding =SAME
+W1 = create_conv_weight(5,5,1,4)
+B1 = create_bias([4])
+strides1 = create_strides(1,1,1,1)
+Y1 = tf.nn.relu(create_conv_layer(X_image,W1,strides1,padding="SAME")+B1)
+
+W2 = create_conv_weight(5,5,4,8)
+B2 = create_bias([8])
+strides2 = create_strides(1,2,2,1)
+Y2 = tf.nn.relu(create_conv_layer(Y1,W2,strides2,padding="SAME")+B2)
+
+W3 = create_conv_weight(4,4,8,12)
+B3 = create_bias([12])
+strides3 = create_strides(1,2,2,1)
+Y3 = tf.nn.relu(create_conv_layer(Y2,W3,strides3,padding="SAME")+B3)
+
+# print (type(Y3))
+# print (np.shape(Y3))
+keep_prob = tf.placeholder(tf.float32)
+# Y3_drop = tf.nn.dropout(Y3,keep_prob)
+
+Y3_reshaped = tf.reshape(Y3,[-1,7*7*12])
+W4 = create_fully_connected_weight([7*7*12,200])
+B4 = create_bias([200])
+Y4 = tf.nn.relu(tf.matmul(Y3_reshaped,W4)+B4)
+Y4_drop = tf.nn.dropout(Y4,keep_prob=keep_prob)
+
+W5 = create_fully_connected_weight([200,10])
+B5 = create_bias([10])
+Ylogits = tf.matmul(Y4_drop,W5)+B5
+
+
+# W1 = create_conv_weight(5,5,1,32)
+# B1 = create_bias([32])
+# strides1 = create_strides(1,1,1,1)
+# Y1 = tf.nn.relu(create_conv_layer(X_image,W1,strides1,padding="SAME")+B1)
+# Y1_pooled = apply_max_pool_2x2(Y1)
+#
+# W2 = create_conv_weight(5,5,32,64)
+# B2 = create_bias([64])
+# strides2 = create_strides(1,1,1,1)
+# Y2 = tf.nn.relu(create_conv_layer(Y1_pooled,W2,strides2,padding="SAME")+B2)
+# Y2_pooled = apply_max_pool_2x2(Y2)
+#
+# Y2_pooled_flat = tf.reshape(Y2_pooled,[-1,7*7*64])
+# W3 = create_fully_connected_weight([7*7*64,1024])
+# B3 = create_bias([1024])
+# Y3 = tf.nn.relu(tf.matmul(Y2_pooled_flat,W3)+B3)
+# keep_prob = tf.placeholder(tf.float32)
+# Y3_drop = tf.nn.dropout(Y3,keep_prob)
+
+# W4 = create_fully_connected_weight([1024,10])
+# B4 = create_bias([10])
+# Ylogits = tf.matmul(Y3_drop,W4)+B4
+
+
+# 3. Define the loss function
+cross_entropy =  tf.nn.softmax_cross_entropy_with_logits(logits=Ylogits, labels= Y_)
+cross_entropy = tf.reduce_mean(cross_entropy)
+
+#prediction
+correct_prediction = tf.equal(tf.argmax(Ylogits,1),tf.argmax(Y_,1))
+
+# 4. Define the accuracy
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+# 5. Define an optimizer
+#train_step = tf.train.GradientDescentOptimizer(0.5).minimize(cross_entropy)
+#train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+train_step = tf.train.MomentumOptimizer(0.1,0.9).minimize(cross_entropy)
+
+
+# initialize
+init = tf.initialize_all_variables()
+sess = tf.Session()
+sess.run(init)
+
+
+def training_step(num_iter, update_test_data, update_train_data):
+
+    print  "\r",num_iter,
+    ####### actual learning
+    # reading batches of 100 images with 100 labels
+    batch_X, batch_Y = mnist.train.next_batch(100)
+    # the backpropagation training step
+    sess.run(train_step, feed_dict={X: batch_X, Y_: batch_Y,keep_prob:0.75})
+
+    ####### evaluating model performance for printing purposes
+    # evaluation used to later visualize how well you did at a particular time in the training
+    train_a = []
+    train_c = []
+    test_a = []
+    test_c = []
+    if update_train_data:
+        #print np.shape(batch_X)
+        a, c = sess.run([accuracy, cross_entropy], feed_dict={X: batch_X, Y_: batch_Y,keep_prob:1})
+        train_a.append(a)
+        train_c.append(c)
+
+    if update_test_data:
+        a, c = sess.run([accuracy, cross_entropy], feed_dict={X: mnist.test.images, Y_: mnist.test.labels,keep_prob:1})
+        #   print np.shape(mnist.test.labels)
+        test_a.append(a)
+        test_c.append(c)
+
+
+    return (train_a, train_c, test_a, test_c)
+
+
+# 6. Train and test the model, store the accuracy and loss per iteration
+
+train_a = []
+train_c = []
+test_a = []
+test_c = []
+
+training_iter = 20000
+epoch_size = 100
+for i in range(training_iter):
+    test = False
+    if i % epoch_size == 0:
+        test = True
+    a, c, ta, tc = training_step(i, test, test)
+    train_a += a
+    train_c += c
+    test_a += ta
+    test_c += tc
+
+# 7. Plot and visualise the accuracy and loss
+
+# accuracy training vs testing dataset
+plt.title("Accuracy: Training vs Test")
+plt.plot(train_a,label="Training Accuracy")
+plt.plot(test_a,label ="Test Accuracy")
+plt.xlabel("epoch")
+plt.legend(loc=4)
+plt.grid(True)
+plt.show()
+
+
+# loss training vs testing dataset
+plt.title("Loss: Training vs Test")
+plt.plot(train_c,label="Training Loss")
+plt.plot(test_c,label="Test Loss")
+plt.xlabel("epoch")
+plt.legend(loc=1)
+plt.grid(True)
+plt.show()
+
+# Zoom in on the tail of the plots
+zoom_point = 50
+x_range = range(zoom_point,training_iter/epoch_size)
+plt.title("Accuracy: Training vs Test")
+plt.plot(x_range, train_a[zoom_point:],label="Training Accuracy")
+plt.plot(x_range, test_a[zoom_point:],label="Test Accuracy")
+plt.grid(True)
+plt.xlabel("epoch")
+plt.xticks(x_range)
+plt.legend(loc=4)
+plt.show()
+
+plt.title("Loss: Training vs Test")
+plt.plot(x_range,train_c[zoom_point:],label="Training Loss")
+plt.plot(x_range,test_c[zoom_point:],label="Test Loss")
+plt.grid(True)
+plt.xlabel("epoch")
+plt.xticks(x_range)
+plt.legend(loc=1)
+plt.show()
+
+print "test_a length: "+str(len(test_a))
+print("test accuracy from array  test_a: "+str( test_a[199]))
+print("loss from array  test_c: "+str( test_c[199]))
