@@ -1,4 +1,3 @@
-#source for data reading: https://github.com/kgeorge/kgeorge_dpl/blob/master/notebooks/tf_cifar.ipynb
 from __future__ import division
 # all tensorflow api is accessible through this
 import tensorflow as tf
